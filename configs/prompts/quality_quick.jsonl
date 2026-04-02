@@ -1,0 +1,3 @@
+{"id":"q1","category":"cn_qa","prompt":"请用通俗语言解释什么是梯度下降。"}
+{"id":"q2","category":"reasoning","prompt":"小明有3个苹果，又买了2个，送出去1个，还剩几个？"}
+{"id":"q3","category":"summary","prompt":"请用一句话总结：大模型评测不仅要看吞吐，还要看效果和稳定性。"}

@@ -12,6 +12,7 @@
 - `image_uri` 必须由你明确填写为真实可拉取镜像
 - preflight 阶段会强制执行 `docker pull`
 - 提供统一启动脚本：`scripts/start_eval.sh`
+- 评测支持三种模式：`quick / standard / deep`
 
 ## 完整流程
 
@@ -21,9 +22,9 @@
 4. 启动被测推理服务
 5. 执行 smoke test
 6. 执行 benchmark
-7. 执行 quality samples
+7. 按评测模式执行 quality samples
 8. 调用外部 Judge API，对质量样例进行分析与总结
-9. 生成 summary.json 与 report.md
+9. 生成 summary.json / report.md / final_brief.md
 10. 清理容器
 
 ## 本地一键启动
@@ -41,6 +42,7 @@ cp .env.example .env
 JUDGE_API_BASE=https://api.mooko.ai/v1
 JUDGE_API_KEY=YOUR_API_KEY
 JUDGE_MODEL=mooko/gpt-5.4
+EVAL_MODE=quick
 IMAGE_CONFIG=configs/images/qwen_vllm_example.json
 ```
 
@@ -72,6 +74,12 @@ docker pull <your_image_uri>
 bash scripts/start_eval.sh
 ```
 
+## 评测模式
+
+- `quick`：快速检查，适合先看镜像是否基本可用
+- `standard`：标准评测，适合日常工程验证
+- `deep`：深度评测，适合更完整地给出风险与建议
+
 ## 输出
 
 所有结果写入：
@@ -91,12 +99,11 @@ outputs/<run_id>/
 - judge_eval.json
 - summary.json
 - report.md
+- final_brief.md
 
-## 关键说明
-
-- 当前版本不依赖 OpenClaw 子 agent
-- 当前版本通过外部 GPT-5.4 Judge API 完成质量评测
-- 当前版本要求你显式提供真实存在的镜像地址，而不是依赖仓库内置虚假默认值
+其中：
+- `report.md`：完整报告
+- `final_brief.md`：用户更容易快速阅读的摘要结论
 
 ## 文档
 

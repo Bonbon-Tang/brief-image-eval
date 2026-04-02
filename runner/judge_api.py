@@ -4,7 +4,7 @@ from pathlib import Path
 
 import requests
 
-from runner.utils import load_jsonl, utc_timestamp, write_json
+from runner.utils import load_jsonl, utc_timestamp, write_json, write_text
 
 
 def _normalize_result(data, raw_output=None):
@@ -98,9 +98,11 @@ def call_judge_api(api_base, api_key, model, prompt_text, timeout_sec=180, max_r
     return last_result
 
 
-def build_judge_prompt(base_url, model_id, quality_prompts_path, sampled_outputs):
+def build_judge_prompt(prompt_template_path, base_url, model_id, quality_prompts_path, sampled_outputs, eval_mode):
+    template = Path(prompt_template_path).read_text(encoding='utf-8')
     cases = load_jsonl(quality_prompts_path)
     payload = {
+        'eval_mode': eval_mode,
         'service_base_url': base_url,
         'tested_model_id': model_id,
         'quality_cases': cases,
@@ -123,22 +125,39 @@ def build_judge_prompt(base_url, model_id, quality_prompts_path, sampled_outputs
             'recommendations': ['string']
         }
     }
-    return (
-        '请基于以下被测模型输出，完成质量评测。\n'
-        '要求：\n'
-        '1. 输出必须是严格 JSON；\n'
-        '2. 不要输出 Markdown；\n'
-        '3. 不要省略任何 case；\n'
-        '4. 对每个 case 判断是否完整、是否明显幻觉、是否符合问题要求；\n'
-        '5. 最后给总体状态和建议。\n\n'
-        '评测上下文：\n' + json.dumps(payload, ensure_ascii=False, indent=2)
-    )
+    return template + '\n\n评测上下文：\n' + json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def run_judge_eval(api_base, api_key, judge_model, base_url, model_id, quality_prompts_path, sampled_outputs, output_dir, timeout_sec=180):
-    prompt = build_judge_prompt(base_url, model_id, quality_prompts_path, sampled_outputs)
+def write_final_brief(output_dir, parsed):
+    overall = parsed.get('overall_status', 'FAIL')
+    summary = parsed.get('summary', '')
+    risks = parsed.get('risks', [])[:3]
+    recommendations = parsed.get('recommendations', [])[:3]
+
+    lines = []
+    lines.append('# 评测摘要')
+    lines.append('')
+    lines.append('结论：{}'.format(overall))
+    lines.append('一句话：{}'.format(summary or '无'))
+    lines.append('')
+    if risks:
+        lines.append('主要风险：')
+        for item in risks:
+            lines.append('- {}'.format(item))
+        lines.append('')
+    if recommendations:
+        lines.append('建议下一步：')
+        for item in recommendations:
+            lines.append('- {}'.format(item))
+        lines.append('')
+    write_text(Path(output_dir) / 'final_brief.md', '\n'.join(lines))
+
+
+def run_judge_eval(api_base, api_key, judge_model, prompt_template_path, eval_mode, base_url, model_id, quality_prompts_path, sampled_outputs, output_dir, timeout_sec=180):
+    prompt = build_judge_prompt(prompt_template_path, base_url, model_id, quality_prompts_path, sampled_outputs, eval_mode)
     result = call_judge_api(api_base, api_key, judge_model, prompt, timeout_sec=timeout_sec)
     write_json(Path(output_dir) / 'judge_eval_raw.json', result)
     parsed = result.get('parsed_result', {})
     write_json(Path(output_dir) / 'judge_eval.json', parsed)
+    write_final_brief(output_dir, parsed)
     return parsed
