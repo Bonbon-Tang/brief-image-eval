@@ -1,0 +1,6 @@
+{
+  "api_base": "https://api.mooko.ai/v1",
+  "api_key": "REPLACE_ME",
+  "model": "mooko/gpt-5.4",
+  "timeout_sec": 180
+}
