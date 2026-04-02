@@ -16,14 +16,17 @@
 3. 启动被测推理服务
 4. 执行 smoke test
 5. 执行 benchmark
-6. 调用外部评测 API，对质量样例进行分析与总结
-7. 生成 summary.json 与 report.md
-8. 清理容器
+6. 执行 quality samples
+7. 调用外部 Judge API，对质量样例进行分析与总结
+8. 生成 summary.json 与 report.md
+9. 清理容器
 
 ## 一键执行
 
 ```bash
 cd /home/admin/.openclaw/workspace/brief-image-eval
+pip3 install -r requirements.txt
+
 python3 run_eval.py \
   --config configs/images/qwen_vllm_example.json \
   --judge-api-base https://api.mooko.ai/v1 \
@@ -51,12 +54,16 @@ outputs/<run_id>/
 - launch.json
 - smoke.json
 - benchmark.json
+- quality_samples.json
+- judge_eval_raw.json
 - judge_eval.json
 - summary.json
 - report.md
 
-## 说明
+## 下一步
 
-- 第一版默认支持 vLLM OpenAI 兼容服务
-- 评测 API 采用 OpenAI-compatible Chat Completions 方式调用
-- 后续可扩展为 Responses API、平台回传、更多镜像模板
+后续可以继续扩展：
+- H200 多卡
+- PyTorch 自定义启动模板
+- 结果自动回传 ai-eval-platform
+- 更严格的效果评测和结构化评分
