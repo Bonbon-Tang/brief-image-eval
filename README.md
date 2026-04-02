@@ -13,6 +13,7 @@
 - preflight 阶段会强制执行 `docker pull`
 - 提供统一启动脚本：`scripts/start_eval.sh`
 - 评测支持三种模式：`quick / standard / deep`
+- 流程结束后终端会直接打印 `final_brief.md` 的核心结论
 
 ## 完整流程
 
@@ -26,6 +27,7 @@
 8. 调用外部 Judge API，对质量样例进行分析与总结
 9. 生成 summary.json / report.md / final_brief.md
 10. 清理容器
+11. 在终端直接打印最终摘要
 
 ## 本地一键启动
 
@@ -104,6 +106,7 @@ outputs/<run_id>/
 其中：
 - `report.md`：完整报告
 - `final_brief.md`：用户更容易快速阅读的摘要结论
+- 终端执行完成后也会直接打印 `final_brief.md`
 
 ## 文档
 

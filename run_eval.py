@@ -28,6 +28,15 @@ def _judge_prompt_path(eval_mode):
     return ROOT / 'prompts' / 'judge_{}.txt'.format(eval_mode)
 
 
+def _print_final_brief(out_dir):
+    brief_path = out_dir / 'final_brief.md'
+    if not brief_path.exists():
+        return
+    print('\n===== FINAL BRIEF =====')
+    print(brief_path.read_text(encoding='utf-8').strip())
+    print('===== END FINAL BRIEF =====\n')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True, help='镜像配置文件路径')
@@ -110,6 +119,7 @@ def main():
 
     print('\n[DONE] run_id={}'.format(run_id))
     print('[DONE] outputs={}'.format(out_dir))
+    _print_final_brief(out_dir)
     return 0
 
 
