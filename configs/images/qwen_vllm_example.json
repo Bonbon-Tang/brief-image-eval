@@ -1,6 +1,6 @@
 {
   "name": "qwen2.5-7b-vllm",
-  "image_uri": "vllm/vllm-openai:latest",
+  "image_uri": "YOUR_REAL_PULLABLE_IMAGE_URI",
   "model_id": "Qwen/Qwen2.5-7B-Instruct",
   "engine": "vllm",
   "gpu_type": "H200",
@@ -12,8 +12,8 @@
   "gpu_memory_utilization": 0.9,
   "model_source": "huggingface",
   "model_mount_dir": "/models",
-  "source_url": "https://hub.docker.com/r/vllm/vllm-openai",
-  "trust_level": "official",
+  "source_url": "REPLACE_WITH_IMAGE_SOURCE_URL",
+  "trust_level": "official_or_verified",
   "healthcheck_path": "/v1/models",
   "chat_path": "/v1/chat/completions",
   "startup_timeout_sec": 900,
