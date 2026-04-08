@@ -1,0 +1,25 @@
+{
+  "name": "windows-rtx4060-qwen2.5-0.5b-vllm",
+  "image_uri": "vllm/vllm-openai:latest",
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "engine": "vllm",
+  "gpu_type": "Windows RTX4060",
+  "dtype": "bfloat16",
+  "tensor_parallel_size": 1,
+  "host_port": 18060,
+  "container_port": 8000,
+  "max_model_len": 4096,
+  "gpu_memory_utilization": 0.8,
+  "model_source": "huggingface",
+  "model_mount_dir": "/models",
+  "source_url": "https://docs.vllm.ai/en/stable/deployment/docker/",
+  "trust_level": "official",
+  "healthcheck_path": "/v1/models",
+  "chat_path": "/v1/chat/completions",
+  "startup_timeout_sec": 900,
+  "allow_cached_image_on_pull_failure": true,
+  "docker_extra_args": [
+    "-v", "C:\\Users\\%USERNAME%\\.cache\\huggingface:/root/.cache/huggingface",
+    "--ipc=host"
+  ]
+}
