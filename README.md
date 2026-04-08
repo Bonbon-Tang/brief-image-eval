@@ -145,9 +145,11 @@ configs/images/h200_qwen25_3b_vllm.json
 
 ### 4. 推荐镜像准备方式
 
-如果目标 H200 机器直接访问 Docker Hub 不稳定，推荐这样做：
+如果目标 H200 机器直接访问 Docker Hub 不稳定，**不要继续在目标机上硬拉 Docker Hub**，推荐改用下面的离线/中转方式。
 
-#### 在可联网开发机上
+#### 方式 A：开发机 pull → save tar → H200 load（推荐）
+
+在可联网开发机上：
 
 ```bash
 docker pull vllm/vllm-openai:latest
@@ -160,7 +162,43 @@ docker save -o vllm-vllm-openai-latest.tar vllm/vllm-openai:latest
 docker load -i vllm-vllm-openai-latest.tar
 ```
 
+然后可以先确认本地镜像已存在：
+
+```bash
+docker image inspect vllm/vllm-openai:latest
+```
+
+或：
+
+```bash
+docker images | grep vllm
+```
+
 这样即使目标机 `docker pull` 失败，只要本地镜像已存在，preflight 也允许继续执行。
+
+#### 方式 B：推到你们内网镜像仓库（更适合长期）
+
+如果你们有内网 registry，推荐在开发机上：
+
+```bash
+docker pull vllm/vllm-openai:latest
+docker tag vllm/vllm-openai:latest your-registry/brief-image-eval/vllm-openai:latest
+docker push your-registry/brief-image-eval/vllm-openai:latest
+```
+
+然后把配置文件里的：
+
+```json
+"image_uri": "vllm/vllm-openai:latest"
+```
+
+改成：
+
+```json
+"image_uri": "your-registry/brief-image-eval/vllm-openai:latest"
+```
+
+这样目标 H200 机器就不需要直连 Docker Hub，而是从你们自己的镜像仓库拉取。
 
 ### 5. 一键启动
 
@@ -251,8 +289,10 @@ outputs/<run_id>/
 
 处理建议：
 
+- 不要继续在目标机上反复直接拉 Docker Hub
 - 在开发机先 `docker pull`
 - 再 `docker save` / `docker load` 导入到目标机
+- 或改成你们内网 registry
 - 当前项目允许 pull 失败但本地已有镜像时继续执行
 
 ### 2. 容器启动但 readiness 一直失败
