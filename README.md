@@ -112,3 +112,4 @@ outputs/<run_id>/
 
 - `configs/images/README.md`
 - `docs/H200_RUN_GUIDE.md`
+- `docs/PROJECT_START_GUIDE.md`
