@@ -20,6 +20,12 @@ def _resolve_eval_mode(eval_mode):
     return eval_mode
 
 
+def _resolve_judge_mode(judge_mode):
+    if judge_mode not in ('builtin', 'api'):
+        return 'builtin'
+    return judge_mode
+
+
 def _quality_prompts_path(eval_mode):
     return ROOT / 'configs' / 'prompts' / 'quality_{}.jsonl'.format(eval_mode)
 
@@ -40,15 +46,17 @@ def _print_final_brief(out_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True, help='镜像配置文件路径')
-    parser.add_argument('--judge-api-base', required=True, help='评测 API Base，例如 https://api.mooko.ai/v1')
-    parser.add_argument('--judge-api-key', required=True, help='评测 API Key')
-    parser.add_argument('--judge-model', required=True, help='评测模型名，例如 mooko/gpt-5.4')
+    parser.add_argument('--judge-api-base', default='', help='评测 API Base，例如 https://api.mooko.ai/v1')
+    parser.add_argument('--judge-api-key', default='', help='评测 API Key')
+    parser.add_argument('--judge-model', default='mooko/gpt-5.4', help='评测模型名，例如 mooko/gpt-5.4')
     parser.add_argument('--judge-timeout-sec', type=int, default=180, help='评测 API 超时时间')
+    parser.add_argument('--judge-mode', default='builtin', help='评测模式：builtin / api')
     parser.add_argument('--eval-mode', default='quick', help='评测模式：quick / standard / deep')
     parser.add_argument('--keep-container', action='store_true', help='执行完成后不自动清理容器')
     args = parser.parse_args()
 
     eval_mode = _resolve_eval_mode(args.eval_mode)
+    judge_mode = _resolve_judge_mode(args.judge_mode)
     config_path = (ROOT / args.config).resolve() if not Path(args.config).is_absolute() else Path(args.config)
     config = load_json(config_path)
     run_id = make_run_id(config['name'] + '_' + eval_mode)
@@ -62,6 +70,7 @@ def main():
         'config_path': str(config_path),
         'config': config,
         'eval_mode': eval_mode,
+        'judge_mode': judge_mode,
         'judge_prompt_path': str(judge_prompt_path),
         'quality_prompts_path': str(quality_prompts_path),
         'judge_api': {
@@ -93,6 +102,10 @@ def main():
     quality_samples = run_quality_samples(base_url, config['model_id'], str(quality_prompts_path))
     write_json(out_dir / 'quality_samples.json', quality_samples)
 
+    if judge_mode == 'api' and (not args.judge_api_base or not args.judge_api_key):
+        print('[FAIL] judge_mode=api 但缺少 judge-api-base 或 judge-api-key')
+        return 1
+
     judge_eval = run_judge_eval(
         api_base=args.judge_api_base,
         api_key=args.judge_api_key,
@@ -105,6 +118,7 @@ def main():
         sampled_outputs=quality_samples.get('results', []),
         output_dir=str(out_dir),
         timeout_sec=args.judge_timeout_sec,
+        judge_mode=judge_mode,
     )
 
     summary = build_summary(config, run_id, preflight, launch, smoke, benchmark, judge_eval)

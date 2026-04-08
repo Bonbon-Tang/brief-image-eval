@@ -2,19 +2,21 @@
 
 一个面向真实 H200 机器的镜像评测脚手架。
 
-## 你的两个核心要求
+## 当前默认设计
 
-1. **镜像必须真实存在且可以直接拉取**
-2. **本地只启动一个脚本，就能执行完整流程**
+这个项目现在默认按**内置评测流程**运行，不强依赖外部 Judge API：
 
-这个项目已经按这两个要求设计：
+- 默认 `JUDGE_MODE=builtin`
+- 可以在开发机上先联网执行 `docker pull`
+- 如果目标机器 pull 失败，但本地已经存在镜像缓存，可继续执行
+- 仍然保留 `JUDGE_MODE=api` 能力，供后续接外部评测模型使用
 
-- preflight 阶段会强制执行 `docker pull`
-- 提供统一启动脚本：`scripts/start_eval.sh`
-- 评测支持三种模式：`quick / standard / deep`
-- 流程结束后终端会直接打印 `final_brief.md` 的核心结论
+也就是说，当前更适合的工程流程是：
 
-> 注意：当前仓库已经提供默认可用配置 `configs/images/h200_qwen25_3b_vllm.json`，其中的 `image_uri` 已经填好为真实可拉取镜像。**只有你想替换成别的镜像时，才需要手动修改 `image_uri`。**
+1. 在可联网开发机上提前拉好镜像
+2. 在目标 H200 机器上保留本地镜像
+3. 项目默认走内置评测逻辑，先验证完整链路
+4. 后续如果需要更细致的自动评价，再切到外部 Judge API
 
 ## 当前推荐首发组合
 
@@ -30,20 +32,22 @@
 2. 当前项目启动参数与 vLLM OpenAI 兼容服务天然匹配
 3. Qwen2.5-3B-Instruct 体量适中，适合先验证完整链路
 4. 默认按公开模型匿名拉取，不强制要求 `HF_TOKEN`
+5. 默认使用内置评测逻辑，不强依赖外部 API
 
 ## 完整流程
 
 1. 读取镜像配置
-2. 显式 `docker pull` 验证镜像真实可拉取
-3. 执行 preflight 检查（docker / nvidia-smi / 镜像信息）
-4. 启动被测推理服务
-5. 执行 smoke test
-6. 执行 benchmark
-7. 按评测模式执行 quality samples
-8. 调用外部 Judge API，对质量样例进行分析与总结
-9. 生成 summary.json / report.md / final_brief.md
-10. 清理容器
-11. 在终端直接打印最终摘要
+2. 尝试 `docker pull` 验证镜像可拉取
+3. 如 pull 失败但本地已有镜像缓存，可继续执行
+4. 执行 preflight 检查（docker / nvidia-smi / 镜像信息）
+5. 启动被测推理服务
+6. 执行 smoke test
+7. 执行 benchmark
+8. 执行 quality samples
+9. 使用内置评测逻辑（或可选外部 Judge API）生成分析结果
+10. 生成 summary.json / report.md / final_brief.md
+11. 清理容器
+12. 在终端直接打印最终摘要
 
 ## 快速开始
 
@@ -79,21 +83,28 @@ pip3 install -r requirements.txt
 cp .env.example .env
 ```
 
-编辑 `.env`，至少填写：
+编辑 `.env`，最小可用配置：
 
 ```bash
-JUDGE_API_BASE=https://api.mooko.ai/v1
-JUDGE_API_KEY=YOUR_API_KEY
-JUDGE_MODEL=mooko/gpt-5.4
 EVAL_MODE=quick
+JUDGE_MODE=builtin
 IMAGE_CONFIG=configs/images/h200_qwen25_3b_vllm.json
 ```
 
 说明：
 
 - 当前默认配置**不要求**填写 `HF_TOKEN`
-- 默认走公开模型匿名拉取
-- 如果后续匿名拉取失败，再补充 `HF_TOKEN` 方案
+- 当前默认配置**不要求**填写 Judge API
+- 默认走公开模型匿名拉取 + 内置评测逻辑
+
+如果你想启用外部 Judge API，再额外填写：
+
+```bash
+JUDGE_MODE=api
+JUDGE_API_BASE=https://api.mooko.ai/v1
+JUDGE_API_KEY=YOUR_API_KEY
+JUDGE_MODEL=mooko/gpt-5.4
+```
 
 ### 3. 使用默认推荐配置
 
@@ -110,6 +121,7 @@ configs/images/h200_qwen25_3b_vllm.json
 - `host_port`: `18000`
 - `container_port`: `8000`
 - `healthcheck_path`: `/v1/models`
+- `allow_cached_image_on_pull_failure`: `true`
 
 这里特别说明一下：
 
@@ -131,18 +143,40 @@ configs/images/h200_qwen25_3b_vllm.json
 - 挂载 `/root/.cache/huggingface`
 - `--ipc=host`
 
-如果想先手动验证镜像：
+### 4. 推荐镜像准备方式
+
+如果目标 H200 机器直接访问 Docker Hub 不稳定，推荐这样做：
+
+#### 在可联网开发机上
 
 ```bash
 docker pull vllm/vllm-openai:latest
+docker save -o vllm-vllm-openai-latest.tar vllm/vllm-openai:latest
 ```
 
-### 4. 一键启动
+把 tar 包传到目标 H200 机器后：
 
-如果你沿用默认配置，那么做完 `.env` 后就可以直接启动，不需要额外再编辑镜像地址。
+```bash
+docker load -i vllm-vllm-openai-latest.tar
+```
+
+这样即使目标机 `docker pull` 失败，只要本地镜像已存在，preflight 也允许继续执行。
+
+### 5. 一键启动
+
+如果你沿用默认配置，那么做完 `.env` 后就可以直接启动：
 
 ```bash
 bash scripts/start_eval.sh
+```
+
+如果你想显式指定内置评测模式，也可以这样：
+
+```bash
+python3 run_eval.py \
+  --config configs/images/h200_qwen25_3b_vllm.json \
+  --judge-mode builtin \
+  --eval-mode quick
 ```
 
 ## 如何交互
@@ -165,9 +199,15 @@ bash scripts/start_eval.sh
 
 因此被测镜像需要提供 OpenAI 兼容接口。
 
-### 3. 项目和 Judge API 交互
+### 3. 项目和评测逻辑交互
 
-项目会把质量样例输出发给 Judge API，做自动分析总结。
+默认是：
+
+- **内置评测逻辑**：不依赖外部 API，直接根据样例结果生成 PASS/WARN/FAIL 与建议
+
+可选是：
+
+- **外部 Judge API**：调用外部模型做更细致的分析总结
 
 ## 评测模式
 
@@ -207,7 +247,13 @@ outputs/<run_id>/
 
 ### 1. `docker pull` 失败
 
-说明镜像地址不可拉取，或当前机器没有访问权限。
+说明目标机器无法直接访问 Docker Hub。
+
+处理建议：
+
+- 在开发机先 `docker pull`
+- 再 `docker save` / `docker load` 导入到目标机
+- 当前项目允许 pull 失败但本地已有镜像时继续执行
 
 ### 2. 容器启动但 readiness 一直失败
 
@@ -218,19 +264,17 @@ outputs/<run_id>/
 - 模型还没加载完
 - 公开模型匿名下载失败
 
-### 3. 启动时报模型下载问题
+### 3. 需要更强的自动质量分析
 
-优先检查：
+默认内置评测逻辑已经够做第一轮链路验证。
 
-- 当前机器是否能访问 Hugging Face
-- `/root/.cache/huggingface` 是否可用
-- 当前模型是否允许匿名拉取
+如果需要更细的自动评价，再开启：
 
-如果匿名拉取失败，再考虑补充 `HF_TOKEN`。
+```bash
+JUDGE_MODE=api
+```
 
-### 4. Judge API 缺失
-
-如果没填 `JUDGE_API_BASE` 或 `JUDGE_API_KEY`，启动脚本会直接失败。
+并配置对应 Judge API 参数。
 
 ## 文档
 

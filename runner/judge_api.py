@@ -10,6 +10,7 @@ from runner.utils import load_jsonl, utc_timestamp, write_json, write_text
 def _normalize_result(data, raw_output=None):
     if not isinstance(data, dict):
         return {
+            'judge_mode': 'api',
             'overall_status': 'FAIL',
             'summary': 'judge API 返回结果不是对象',
             'cases': [],
@@ -17,6 +18,7 @@ def _normalize_result(data, raw_output=None):
             'recommendations': ['检查 judge prompt 和模型输出'],
             'raw_output': raw_output,
         }
+    data.setdefault('judge_mode', 'api')
     data.setdefault('overall_status', 'FAIL')
     data.setdefault('summary', '')
     data.setdefault('cases', [])
@@ -60,6 +62,7 @@ def call_judge_api(api_base, api_key, model, prompt_text, timeout_sec=180, max_r
                 data = json.loads(text)
             except Exception:
                 data = {
+                    'judge_mode': 'api',
                     'overall_status': 'FAIL',
                     'summary': 'judge API 返回内容不是合法 JSON',
                     'cases': [],
@@ -86,6 +89,7 @@ def call_judge_api(api_base, api_key, model, prompt_text, timeout_sec=180, max_r
                 'attempt': attempt + 1,
                 'raw_response': None,
                 'parsed_result': {
+                    'judge_mode': 'api',
                     'overall_status': 'FAIL',
                     'summary': 'judge API 调用异常: {}'.format(e),
                     'cases': [],
@@ -153,7 +157,116 @@ def write_final_brief(output_dir, parsed):
     write_text(Path(output_dir) / 'final_brief.md', '\n'.join(lines))
 
 
-def run_judge_eval(api_base, api_key, judge_model, prompt_template_path, eval_mode, base_url, model_id, quality_prompts_path, sampled_outputs, output_dir, timeout_sec=180):
+def _build_builtin_case(row):
+    if row.get('error'):
+        return {
+            'id': row.get('id', 'unknown'),
+            'category': row.get('category', 'quality'),
+            'prompt': row.get('prompt', ''),
+            'response': '',
+            'latency_ms': row.get('latency_ms', 0),
+            'verdict': 'FAIL',
+            'notes': '请求失败: {}'.format(row.get('error')),
+        }
+
+    text = (row.get('response_text') or '').strip()
+    latency = row.get('latency_ms', 0)
+
+    verdict = 'PASS'
+    notes = []
+
+    if not text:
+        verdict = 'FAIL'
+        notes.append('返回内容为空')
+    elif len(text) < 10:
+        verdict = 'WARN'
+        notes.append('返回内容较短，可能信息不足')
+
+    if latency and latency > 60000:
+        verdict = 'WARN' if verdict == 'PASS' else verdict
+        notes.append('单条响应耗时较高')
+
+    if not notes:
+        notes.append('响应正常，具备基本可读性')
+
+    return {
+        'id': row.get('id', 'unknown'),
+        'category': row.get('category', 'quality'),
+        'prompt': row.get('prompt', ''),
+        'response': text[:1000],
+        'latency_ms': latency,
+        'verdict': verdict,
+        'notes': '；'.join(notes),
+    }
+
+
+def run_builtin_judge_eval(eval_mode, base_url, model_id, sampled_outputs, output_dir):
+    cases = [_build_builtin_case(row) for row in sampled_outputs]
+    fail_count = sum(1 for c in cases if c['verdict'] == 'FAIL')
+    warn_count = sum(1 for c in cases if c['verdict'] == 'WARN')
+    pass_count = sum(1 for c in cases if c['verdict'] == 'PASS')
+
+    if fail_count > 0:
+        overall = 'FAIL'
+        summary = '内置评测发现 {} 个失败样例，服务链路或输出质量存在明显问题。'.format(fail_count)
+    elif warn_count > 0:
+        overall = 'WARN'
+        summary = '内置评测通过，但存在 {} 个告警样例，建议进一步人工复核。'.format(warn_count)
+    else:
+        overall = 'PASS'
+        summary = '内置评测通过，样例输出整体正常，可继续后续验证。'
+
+    risks = []
+    recommendations = []
+
+    if fail_count > 0:
+        risks.append('存在失败样例，说明服务链路或模型响应仍不稳定')
+        recommendations.append('优先检查失败样例对应的请求日志和容器日志')
+    if warn_count > 0:
+        risks.append('存在响应过短或耗时偏高的样例')
+        recommendations.append('结合 smoke / benchmark 结果复核延迟与输出质量')
+    if pass_count == len(cases) and cases:
+        recommendations.append('可继续切换到 standard/deep 模式，或改用外部 Judge API 做更细致分析')
+    if not cases:
+        risks.append('未收集到有效质量样例')
+        recommendations.append('检查 quality prompts 和服务接口响应')
+
+    parsed = {
+        'judge_mode': 'builtin',
+        'overall_status': overall,
+        'summary': summary,
+        'cases': cases,
+        'risks': risks,
+        'recommendations': recommendations,
+        'stats': {
+            'pass_count': pass_count,
+            'warn_count': warn_count,
+            'fail_count': fail_count,
+            'sample_count': len(cases),
+            'service_base_url': base_url,
+            'tested_model_id': model_id,
+            'eval_mode': eval_mode,
+        },
+    }
+
+    raw = {
+        'timestamp': utc_timestamp(),
+        'http_status': None,
+        'latency_ms': None,
+        'attempt': 1,
+        'raw_response': {'mode': 'builtin'},
+        'parsed_result': parsed,
+    }
+    write_json(Path(output_dir) / 'judge_eval_raw.json', raw)
+    write_json(Path(output_dir) / 'judge_eval.json', parsed)
+    write_final_brief(output_dir, parsed)
+    return parsed
+
+
+def run_judge_eval(api_base, api_key, judge_model, prompt_template_path, eval_mode, base_url, model_id, quality_prompts_path, sampled_outputs, output_dir, timeout_sec=180, judge_mode='builtin'):
+    if judge_mode == 'builtin':
+        return run_builtin_judge_eval(eval_mode, base_url, model_id, sampled_outputs, output_dir)
+
     prompt = build_judge_prompt(prompt_template_path, base_url, model_id, quality_prompts_path, sampled_outputs, eval_mode)
     result = call_judge_api(api_base, api_key, judge_model, prompt, timeout_sec=timeout_sec)
     write_json(Path(output_dir) / 'judge_eval_raw.json', result)

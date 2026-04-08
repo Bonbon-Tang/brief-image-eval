@@ -17,6 +17,7 @@
   "healthcheck_path": "/v1/models",
   "chat_path": "/v1/chat/completions",
   "startup_timeout_sec": 900,
+  "allow_cached_image_on_pull_failure": true,
   "docker_extra_args": [
     "-v", "/root/.cache/huggingface:/root/.cache/huggingface",
     "--ipc=host"
