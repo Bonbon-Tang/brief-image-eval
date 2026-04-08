@@ -9,11 +9,12 @@
 
 这个项目已经按这两个要求设计：
 
-- `image_uri` 必须由你明确填写为真实可拉取镜像
 - preflight 阶段会强制执行 `docker pull`
 - 提供统一启动脚本：`scripts/start_eval.sh`
 - 评测支持三种模式：`quick / standard / deep`
 - 流程结束后终端会直接打印 `final_brief.md` 的核心结论
+
+> 注意：当前仓库已经提供默认可用配置 `configs/images/h200_qwen25_3b_vllm.json`，其中的 `image_uri` 已经填好为真实可拉取镜像。**只有你想替换成别的镜像时，才需要手动修改 `image_uri`。**
 
 ## 当前推荐首发组合
 
@@ -110,6 +111,21 @@ configs/images/h200_qwen25_3b_vllm.json
 - `container_port`: `8000`
 - `healthcheck_path`: `/v1/models`
 
+这里特别说明一下：
+
+- **默认配置下，你不需要再手动填写真实镜像地址**
+- 因为 `configs/images/h200_qwen25_3b_vllm.json` 里已经写好了：
+
+```json
+"image_uri": "vllm/vllm-openai:latest"
+```
+
+只有下面这种情况，才需要你自己改：
+
+- 你想换成你们自己的部署镜像
+- 你想换成别的官方镜像/tag
+- 你要测试另一个模型对应的镜像方案
+
 额外参数：
 
 - 挂载 `/root/.cache/huggingface`
@@ -122,6 +138,8 @@ docker pull vllm/vllm-openai:latest
 ```
 
 ### 4. 一键启动
+
+如果你沿用默认配置，那么做完 `.env` 后就可以直接启动，不需要额外再编辑镜像地址。
 
 ```bash
 bash scripts/start_eval.sh
