@@ -18,8 +18,7 @@
   "chat_path": "/v1/chat/completions",
   "startup_timeout_sec": 900,
   "docker_extra_args": [
-    "-v", "${HOME}/.cache/huggingface:/root/.cache/huggingface",
-    "--env", "HF_TOKEN=${HF_TOKEN}",
+    "-v", "/root/.cache/huggingface:/root/.cache/huggingface",
     "--ipc=host"
   ]
 }

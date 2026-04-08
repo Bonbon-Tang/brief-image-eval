@@ -63,7 +63,6 @@ JUDGE_API_KEY=YOUR_API_KEY
 JUDGE_MODEL=mooko/gpt-5.4
 EVAL_MODE=quick
 IMAGE_CONFIG=configs/images/h200_qwen25_3b_vllm.json
-HF_TOKEN=YOUR_HF_TOKEN
 ```
 
 ### 字段说明
@@ -73,7 +72,7 @@ HF_TOKEN=YOUR_HF_TOKEN
 - `JUDGE_MODEL`：Judge 模型名
 - `EVAL_MODE`：评测模式，建议先用 `quick`
 - `IMAGE_CONFIG`：被测镜像配置文件
-- `HF_TOKEN`：Hugging Face Token，用于镜像启动后拉取模型
+- 当前默认配置不要求填写 `HF_TOKEN`，按公开模型匿名拉取方式启动
 
 > 注意：当前 `scripts/start_eval.sh` 会自动加载 `.env`。
 
@@ -98,7 +97,6 @@ configs/images/h200_qwen25_3b_vllm.json
 并额外加入了：
 
 - Hugging Face 缓存目录挂载
-- `HF_TOKEN` 环境变量传递
 - `--ipc=host`
 
 ---
@@ -214,15 +212,17 @@ outputs/<run_id>/
 - 服务没在 8000 端口监听
 - `/v1/models` 不存在
 - 模型还没加载完
-- HF Token / 模型下载失败
+- 匿名模型下载失败
 
 ### 3. 启动时报模型下载问题
 
 优先检查：
 
-- `.env` 里是否填写了 `HF_TOKEN`
 - 当前机器是否能访问 Hugging Face
-- `~/.cache/huggingface` 是否可用
+- `/root/.cache/huggingface` 是否可用
+- 公开模型是否可匿名拉取
+
+如果匿名拉取失败，再考虑补充 `HF_TOKEN` 方案
 
 ### 4. Judge API 缺失
 
