@@ -1,4 +1,3 @@
-
 import subprocess
 import time
 from typing import Any, Dict
@@ -18,6 +17,7 @@ def build_docker_command(config: Dict[str, Any]) -> list[str]:
     max_model_len = int(config.get('max_model_len', 32768))
     gmu = float(config.get('gpu_memory_utilization', 0.9))
     extra = config.get('docker_extra_args', [])
+    launch_mode = config.get('launch_mode', 'legacy_model_flag')
 
     cmd = [
         'docker', 'run', '--gpus', 'all', '--rm', '-d',
@@ -25,14 +25,26 @@ def build_docker_command(config: Dict[str, Any]) -> list[str]:
         '--name', f"eval_{str(host_port)}",
     ]
     cmd.extend(extra)
-    cmd.extend([
-        image_uri,
-        '--model', model_id,
-        '--dtype', dtype,
-        '--tensor-parallel-size', str(tp),
-        '--max-model-len', str(max_model_len),
-        '--gpu-memory-utilization', str(gmu),
-    ])
+    cmd.append(image_uri)
+
+    if launch_mode == 'vllm_serve_entrypoint':
+        cmd.extend([
+            'serve', model_id,
+            '--host', '0.0.0.0',
+            '--port', str(container_port),
+            '--dtype', dtype,
+            '--tensor-parallel-size', str(tp),
+            '--max-model-len', str(max_model_len),
+            '--gpu-memory-utilization', str(gmu),
+        ])
+    else:
+        cmd.extend([
+            '--model', model_id,
+            '--dtype', dtype,
+            '--tensor-parallel-size', str(tp),
+            '--max-model-len', str(max_model_len),
+            '--gpu-memory-utilization', str(gmu),
+        ])
     return cmd
 
 

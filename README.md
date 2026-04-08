@@ -18,21 +18,26 @@
 3. 项目默认走内置评测逻辑，先验证完整链路
 4. 后续如果需要更细致的自动评价，再切到外部 Judge API
 
-## 当前推荐首发组合
+## 当前推荐镜像方案
 
-为了先把 H200 上的完整链路跑通，当前默认推荐：
+### 方案 A：通用官方镜像
 
 - 镜像：`vllm/vllm-openai:latest`
 - 模型：`Qwen/Qwen2.5-3B-Instruct`
 - 配置文件：`configs/images/h200_qwen25_3b_vllm.json`
 
-选择这套组合的原因：
+### 方案 B：GPU 机器已有内网镜像（当前更适合你）
 
-1. vLLM 官方镜像真实可拉取
-2. 当前项目启动参数与 vLLM OpenAI 兼容服务天然匹配
-3. Qwen2.5-3B-Instruct 体量适中，适合先验证完整链路
-4. 默认按公开模型匿名拉取，不强制要求 `HF_TOKEN`
-5. 默认使用内置评测逻辑，不强依赖外部 API
+- 镜像：`registry.h.pjlab.org.cn/ailab-sys/vllm:v0.17.1`
+- 模型：`Qwen/Qwen2.5-3B-Instruct`
+- 配置文件：`configs/images/h200_existing_pjlab_vllm.json`
+
+该方案适用于：
+
+- 目标 H200 机器已经存在该镜像
+- 不想再拉 Docker Hub
+- 希望直接在 GPU 机上启动 `brief-image-eval` 项目本身，跑完整测试链路
+- 不影响已有容器，使用单独端口和单独 GPU 做测试
 
 ## 完整流程
 
@@ -83,12 +88,12 @@ pip3 install -r requirements.txt
 cp .env.example .env
 ```
 
-编辑 `.env`，最小可用配置：
+如果你要直接使用 GPU 机器上已有的内网镜像，推荐最小配置：
 
 ```bash
 EVAL_MODE=quick
 JUDGE_MODE=builtin
-IMAGE_CONFIG=configs/images/h200_qwen25_3b_vllm.json
+IMAGE_CONFIG=configs/images/h200_existing_pjlab_vllm.json
 ```
 
 说明：
@@ -106,116 +111,50 @@ JUDGE_API_KEY=YOUR_API_KEY
 JUDGE_MODEL=mooko/gpt-5.4
 ```
 
-### 3. 使用默认推荐配置
+### 3. 使用 GPU 机已有镜像配置
 
 当前已经提供可直接使用的配置文件：
 
 ```text
-configs/images/h200_qwen25_3b_vllm.json
+configs/images/h200_existing_pjlab_vllm.json
 ```
 
 关键内容：
 
-- `image_uri`: `vllm/vllm-openai:latest`
+- `image_uri`: `registry.h.pjlab.org.cn/ailab-sys/vllm:v0.17.1`
+- `launch_mode`: `vllm_serve_entrypoint`
 - `model_id`: `Qwen/Qwen2.5-3B-Instruct`
-- `host_port`: `18000`
+- `host_port`: `18080`
 - `container_port`: `8000`
 - `healthcheck_path`: `/v1/models`
 - `allow_cached_image_on_pull_failure`: `true`
 
-这里特别说明一下：
-
-- **默认配置下，你不需要再手动填写真实镜像地址**
-- 因为 `configs/images/h200_qwen25_3b_vllm.json` 里已经写好了：
-
-```json
-"image_uri": "vllm/vllm-openai:latest"
-```
-
-只有下面这种情况，才需要你自己改：
-
-- 你想换成你们自己的部署镜像
-- 你想换成别的官方镜像/tag
-- 你要测试另一个模型对应的镜像方案
-
 额外参数：
 
+- `--gpus device=7`，尽量避免影响现有容器
 - 挂载 `/root/.cache/huggingface`
 - `--ipc=host`
 
-### 4. 推荐镜像准备方式
+> 如果 GPU 7 已被占用，请把配置文件里的 `device=7` 改成别的空闲 GPU。
 
-如果目标 H200 机器直接访问 Docker Hub 不稳定，**不要继续在目标机上硬拉 Docker Hub**，推荐改用下面的离线/中转方式。
+### 4. 直接启动项目本身
 
-#### 方式 A：开发机 pull → save tar → H200 load（推荐）
-
-在可联网开发机上：
-
-```bash
-docker pull vllm/vllm-openai:latest
-docker save -o vllm-vllm-openai-latest.tar vllm/vllm-openai:latest
-```
-
-把 tar 包传到目标 H200 机器后：
-
-```bash
-docker load -i vllm-vllm-openai-latest.tar
-```
-
-然后可以先确认本地镜像已存在：
-
-```bash
-docker image inspect vllm/vllm-openai:latest
-```
-
-或：
-
-```bash
-docker images | grep vllm
-```
-
-这样即使目标机 `docker pull` 失败，只要本地镜像已存在，preflight 也允许继续执行。
-
-#### 方式 B：推到你们内网镜像仓库（更适合长期）
-
-如果你们有内网 registry，推荐在开发机上：
-
-```bash
-docker pull vllm/vllm-openai:latest
-docker tag vllm/vllm-openai:latest your-registry/brief-image-eval/vllm-openai:latest
-docker push your-registry/brief-image-eval/vllm-openai:latest
-```
-
-然后把配置文件里的：
-
-```json
-"image_uri": "vllm/vllm-openai:latest"
-```
-
-改成：
-
-```json
-"image_uri": "your-registry/brief-image-eval/vllm-openai:latest"
-```
-
-这样目标 H200 机器就不需要直连 Docker Hub，而是从你们自己的镜像仓库拉取。
-
-### 5. 一键启动
-
-如果你沿用默认配置，那么做完 `.env` 后就可以直接启动：
+如果你沿用上面的 GPU 本地镜像配置，那么直接执行：
 
 ```bash
 bash scripts/start_eval.sh
 ```
 
-如果你想显式指定内置评测模式，也可以这样：
+或者显式执行：
 
 ```bash
 python3 run_eval.py \
-  --config configs/images/h200_qwen25_3b_vllm.json \
+  --config configs/images/h200_existing_pjlab_vllm.json \
   --judge-mode builtin \
   --eval-mode quick
 ```
+
+这会直接启动 `brief-image-eval` 项目本身，而不是让你手动单独起服务。
 
 ## 如何交互
 
@@ -285,15 +224,13 @@ outputs/<run_id>/
 
 ### 1. `docker pull` 失败
 
-说明目标机器无法直接访问 Docker Hub。
+说明目标机器无法直接访问镜像仓库。
 
 处理建议：
 
-- 不要继续在目标机上反复直接拉 Docker Hub
-- 在开发机先 `docker pull`
-- 再 `docker save` / `docker load` 导入到目标机
-- 或改成你们内网 registry
-- 当前项目允许 pull 失败但本地已有镜像时继续执行
+- 如果本地镜像已存在，当前项目允许继续执行
+- 或改用你们 GPU 机已经存在的内网镜像配置
+- 不要在网络不通时反复硬拉 Docker Hub
 
 ### 2. 容器启动但 readiness 一直失败
 
@@ -303,6 +240,7 @@ outputs/<run_id>/
 - `/v1/models` 不存在
 - 模型还没加载完
 - 公开模型匿名下载失败
+- 当前镜像入口方式与项目 launch 模式不匹配
 
 ### 3. 需要更强的自动质量分析
 
