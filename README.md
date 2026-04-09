@@ -2,77 +2,84 @@
 
 一个面向真实 GPU 机器的镜像评测脚手架。
 
-当前这版仓库已经按 **H200 直接执行** 的方式固化，目标是先稳定完成：
+当前仓库主路径已经切换为：**复用 H200 上已有服务**。
 
-1. 用 H200 上已有镜像启动服务
-2. 在宿主机运行 benchmark runner
-3. 输出完整评测结果
+适用场景：
+
+- H200 上已经有一个正在运行的 OpenAI 兼容模型服务
+- 当前机器不方便联网拉模型
+- 当前阶段目标是先把 **服务复用 → benchmark runner → 输出结果** 这条链路稳定跑通
 
 > 重要：`run_eval.py` 要在 **H200 宿主机** 执行，不要在被测 vLLM 容器里执行。
 
 ---
 
-## 一、当前默认测试组合
+## 一、当前默认配置
 
-- 被测镜像：`registry.h.pjlab.org.cn/ailab-sys/vllm:v0.17.1`
-- 宿主机挂载目录：`/mnt/nvme1n1/tangyufeng`
-- 模型目录：`/mnt/nvme1n1/tangyufeng/models/Qwen2.5-0.5B-Instruct`
-- 服务端口：`18080`
-- runner 配置：`configs/images/h200_reuse_existing_service.json`
+默认使用：
+
+- 容器名：`caikun-dlrouter`
+- 服务地址：`http://127.0.0.1:18080`
+- 镜像：`registry.h.pjlab.org.cn/ailab-sys/vllm:v0.17.1`
+- 配置文件：`configs/images/h200_reuse_existing_service.json`
 - 评测模式：`builtin + quick`
+
+配置文件内容核心如下：
+
+```json
+{
+  "reuse_existing_service": true,
+  "existing_container_name": "caikun-dlrouter",
+  "base_url": "http://127.0.0.1:18080"
+}
+```
+
+这意味着：
+
+- 不会 `docker pull`
+- 不会新起容器
+- 不会 cleanup 容器
+- 只会直接请求已有服务做 smoke / benchmark / quality
 
 ---
 
 ## 二、H200 直接执行命令
 
-### 1. 启动被测服务
-
-```bash
-docker rm -f brief-image-eval-vllm 2>/dev/null || true
-
-docker run --rm -d \
-  --name brief-image-eval-vllm \
-  --gpus all \
-  --ipc=host \
-  --mount type=bind,source=/mnt/nvme1n1/tangyufeng,target=/mnt/nvme1n1/tangyufeng \
-  -p 18080:8000 \
-  registry.h.pjlab.org.cn/ailab-sys/vllm:v0.17.1 \
-  serve /mnt/nvme1n1/tangyufeng/models/Qwen2.5-0.5B-Instruct \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --dtype bfloat16 \
-  --tensor-parallel-size 1 \
-  --max-model-len 4096 \
-  --gpu-memory-utilization 0.8
-```
-
-如果你们要固定单卡，比如 GPU 7，把 `--gpus all` 改成：
-
-```bash
---gpus '"device=7"'
-```
-
-### 2. 检查服务是否就绪
+### 1. 先确认已有服务可访问
 
 ```bash
 curl http://127.0.0.1:18080/v1/models
 ```
 
-只要这条返回 JSON，就说明服务已经起来了。
+只要这条能返回 JSON，就说明可以继续。
 
-### 3. 进入项目目录
+如果这条不通，请先检查已有容器的实际端口：
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Ports}}\t{{.Status}}' | grep caikun-dlrouter
+```
+
+如果端口不是 `18080`，请同步修改：
+
+```text
+configs/images/h200_reuse_existing_service.json
+```
+
+里的 `base_url`。
+
+### 2. 进入项目目录
 
 ```bash
 cd /mnt/nvme1n1/tangyufeng/brief-image-eval
 ```
 
-### 4. 安装 Python 依赖
+### 3. 安装 Python 依赖
 
 ```bash
 pip3 install -r requirements.txt
 ```
 
-### 5. 执行 benchmark
+### 4. 执行 benchmark
 
 ```bash
 python3 run_eval.py \
@@ -81,7 +88,7 @@ python3 run_eval.py \
   --eval-mode quick
 ```
 
-或者用脚本：
+或者用脚本执行：
 
 ```bash
 IMAGE_CONFIG=configs/images/h200_reuse_existing_service.json \
@@ -92,9 +99,9 @@ bash scripts/run_h200_benchmark.sh
 
 ---
 
-## 三、查看结果
+## 三、输出结果
 
-结果目录默认在：
+结果默认写入：
 
 ```text
 outputs/<run_id>/
@@ -127,16 +134,15 @@ cat outputs/<run_id>/final_brief.md
 
 ---
 
-## 四、当前定位
+## 四、当前建议
 
-当前目标是 **方向 A：先确认链路稳定可复现**，不是先追求高分。
+当前目标是 **方向 A：先确认链路稳定可复现**。
 
-也就是说，只要你能稳定完成：
+所以判断成功的标准不是先追求高分，而是：
 
-1. 服务启动
-2. runner 跑完
-3. `outputs/<run_id>/` 生成结果
+1. 已有服务可访问
+2. runner 可以完整跑完
+3. `outputs/<run_id>/` 能稳定生成结果
 
-就说明 H200 的执行链已经打通。
-
-后面再根据结果决定是否换更大的模型、调 prompt、调 benchmark 配置。
+如果结果是 `FAIL`，但流程完整走通，也说明这条工程链已经打通。
+后续再处理模型效果、失败样例、并发稳定性等问题。
