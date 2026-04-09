@@ -1,0 +1,13 @@
+{
+  "name": "image0-h200-reuse-existing-service-qwen3-0p6b-local",
+  "reuse_existing_service": true,
+  "existing_container_name": "caikun-dlrouter",
+  "base_url": "http://127.0.0.1:18080",
+  "image_uri": "registry.h.pjlab.org.cn/ailab-sys/vllm:v0.17.1",
+  "model_id": "/mnt/nvme1n1/ml_research/models_4/qwen3-0.6b-local",
+  "engine": "vllm",
+  "gpu_type": "H200",
+  "healthcheck_path": "/v1/models",
+  "chat_path": "/v1/chat/completions",
+  "allow_cached_image_on_pull_failure": true
+}

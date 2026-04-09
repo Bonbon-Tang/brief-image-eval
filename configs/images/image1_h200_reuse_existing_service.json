@@ -10,5 +10,5 @@
   "healthcheck_path": "/v1/models",
   "chat_path": "/v1/chat/completions",
   "allow_cached_image_on_pull_failure": true,
-  "notes": "默认使用 image1。启动服务前需在容器内设置 FLASHINFER_DISABLE_VERSION_CHECK=1，并选择空闲 GPU。"
+  "notes": "启动服务前需在容器内设置 FLASHINFER_DISABLE_VERSION_CHECK=1，并选择空闲 GPU。"
 }
