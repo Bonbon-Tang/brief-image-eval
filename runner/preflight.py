@@ -19,6 +19,7 @@ def _safe_run(cmd, timeout=60):
 
 def run_preflight(config):
     reuse_existing_service = bool(config.get('reuse_existing_service', False))
+    offline_image_only = bool(config.get('offline_image_only', False))
     image_uri = config.get('image_uri', '')
     allow_cached_image = bool(config.get('allow_cached_image_on_pull_failure', True))
 
@@ -60,12 +61,18 @@ def run_preflight(config):
             'warnings': ['复用已有服务模式：已跳过镜像拉取与镜像检查'],
         }
 
-    docker_pull = _safe_run(['docker', 'pull', image_uri], timeout=1800)
-    docker_inspect = _safe_run(['docker', 'image', 'inspect', image_uri])
-
-    pull_ok = docker_pull['returncode'] == 0
-    inspect_ok = docker_inspect['returncode'] == 0
-    image_ready = pull_ok or (allow_cached_image and inspect_ok)
+    if offline_image_only:
+        docker_pull = {'returncode': None, 'stdout': '', 'stderr': 'offline_image_only=true, skipped docker pull'}
+        docker_inspect = _safe_run(['docker', 'image', 'inspect', image_uri])
+        pull_ok = False
+        inspect_ok = docker_inspect['returncode'] == 0
+        image_ready = inspect_ok
+    else:
+        docker_pull = _safe_run(['docker', 'pull', image_uri], timeout=1800)
+        docker_inspect = _safe_run(['docker', 'image', 'inspect', image_uri])
+        pull_ok = docker_pull['returncode'] == 0
+        inspect_ok = docker_inspect['returncode'] == 0
+        image_ready = pull_ok or (allow_cached_image and inspect_ok)
 
     passed = (
         docker_version['returncode'] == 0 and
@@ -79,13 +86,17 @@ def run_preflight(config):
         issues.append('docker 检查失败')
     if nvidia_smi['returncode'] != 0:
         issues.append('nvidia-smi 检查失败')
-    if docker_pull['returncode'] != 0:
-        if inspect_ok and allow_cached_image:
-            warnings.append('镜像拉取失败，但检测到本地已有缓存镜像，允许继续执行')
-        else:
-            issues.append('镜像拉取失败，请确认 image_uri 真实存在且可直接拉取，或先在开发机拉取后导入本机')
-    if docker_inspect['returncode'] != 0 and not pull_ok:
-        issues.append('镜像 inspect 失败，本地不存在可用镜像')
+    if offline_image_only:
+        if not inspect_ok:
+            issues.append('offline_image_only=true，但本地未找到可用镜像，请先在开发机构建/拉取并 docker save 后导入本机')
+    else:
+        if docker_pull['returncode'] != 0:
+            if inspect_ok and allow_cached_image:
+                warnings.append('镜像拉取失败，但检测到本地已有缓存镜像，允许继续执行')
+            else:
+                issues.append('镜像拉取失败，请确认 image_uri 真实存在且可直接拉取，或先在开发机拉取后导入本机')
+        if docker_inspect['returncode'] != 0 and not pull_ok:
+            issues.append('镜像 inspect 失败，本地不存在可用镜像')
 
     return {
         'stage': 'preflight',
@@ -100,6 +111,7 @@ def run_preflight(config):
         },
         'policy': {
             'reuse_existing_service': False,
+            'offline_image_only': offline_image_only,
             'allow_cached_image_on_pull_failure': allow_cached_image,
             'image_ready': image_ready,
         },

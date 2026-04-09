@@ -2,70 +2,75 @@
 
 一个面向真实 GPU 机器的镜像评测脚手架。
 
-当前目标不是追求极限性能，而是先把 **开发机 → H200 → benchmark 结果** 这条链路稳定跑通。
+当前采用 **方案 B**：
+
+- **开发机联网**，负责拉基础镜像、准备小模型、导出离线镜像包
+- **H200 不拉镜像**，只接收 `docker save` 导出的 tar.gz，然后 `docker load` + `docker run`
+
+目标是先用一个小模型把 **离线镜像交付 → H200 执行 benchmark → 输出结果** 这条链路跑通。
 
 ---
 
-## 开发机需要做什么
+## 一、开发机需要执行的全部命令
 
-开发机职责：
-
-1. 拉取/更新代码
-2. 构建评测 runner 镜像
-3. 把代码或 runner 镜像传到 H200
-
-### 1. 拉取代码
+### 1. 拉代码
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Bonbon-Tang/brief-image-eval.git
 cd brief-image-eval
 ```
 
-或者已有仓库时：
+### 2. 给脚本执行权限
 
 ```bash
-git pull
+chmod +x scripts/build_offline_image.sh scripts/run_h200_benchmark.sh
 ```
 
-### 2. 构建 runner 镜像
+### 3. 构建离线被测镜像（小模型）
+
+默认会使用：
+
+- 基础镜像：`vllm/vllm-openai:latest`
+- 模型：`Qwen/Qwen2.5-0.5B-Instruct`
+- 目标镜像名：`brief-image-eval-qwen25-0p5b-vllm:offline`
+
+执行：
 
 ```bash
-docker build -t brief-image-eval-runner:latest .
+bash scripts/build_offline_image.sh
 ```
 
-> 这个镜像是 **评测 runner 本身**，不是被测模型镜像。
-> 它的作用是在 H200 上统一执行 `run_eval.py`，并调用宿主机 Docker 去拉起被测模型镜像。
-
-### 3. 导出 runner 镜像
+如果想显式写全参数，也可以：
 
 ```bash
-docker save brief-image-eval-runner:latest | gzip > brief-image-eval-runner.tar.gz
+IMAGE_NAME=brief-image-eval-qwen25-0p5b-vllm:offline \
+BASE_IMAGE=vllm/vllm-openai:latest \
+MODEL_ID=Qwen/Qwen2.5-0.5B-Instruct \
+HF_CACHE_DIR=$HOME/.cache/huggingface \
+bash scripts/build_offline_image.sh
 ```
 
-### 4. 传到 H200
-
-传镜像：
+### 4. 导出离线镜像包
 
 ```bash
-scp brief-image-eval-runner.tar.gz <user>@<h200-host>:/path/to/
+docker save brief-image-eval-qwen25-0p5b-vllm:offline | gzip > brief-image-eval-qwen25-0p5b-vllm-offline.tar.gz
 ```
 
-如果也要传代码目录：
+### 5. 传代码目录到 H200
 
 ```bash
 scp -r brief-image-eval <user>@<h200-host>:/path/to/
 ```
 
+### 6. 传离线镜像包到 H200
+
+```bash
+scp brief-image-eval-qwen25-0p5b-vllm-offline.tar.gz <user>@<h200-host>:/path/to/
+```
+
 ---
 
-## H200 需要做什么
-
-H200 职责：
-
-1. 准备 Docker / NVIDIA 环境
-2. 导入 runner 镜像，或直接使用代码目录
-3. 执行 benchmark
-4. 查看结果目录
+## 二、H200 需要执行的全部命令
 
 ### 1. 基础检查
 
@@ -75,59 +80,79 @@ docker --version
 python3 --version
 ```
 
-### 2. 两种执行方式
-
-#### 方式 A：直接跑代码目录（最简单，推荐先打通）
-
-进入项目目录并安装依赖：
+### 2. 进入项目目录
 
 ```bash
-cd brief-image-eval
+cd /path/to/brief-image-eval
+```
+
+### 3. 安装 Python 依赖
+
+```bash
 pip3 install -r requirements.txt
 ```
+
+### 4. 导入开发机传来的离线镜像包
+
+```bash
+gunzip -c /path/to/brief-image-eval-qwen25-0p5b-vllm-offline.tar.gz | docker load
+```
+
+### 5. 确认本地镜像存在
+
+```bash
+docker images | grep brief-image-eval-qwen25-0p5b-vllm
+```
+
+### 6. 执行 benchmark
+
+项目已经提供了离线配置：
+
+- `configs/images/h200_offline_qwen25_0p5b_vllm.json`
 
 直接执行：
 
 ```bash
+python3 run_eval.py \
+  --config configs/images/h200_offline_qwen25_0p5b_vllm.json \
+  --judge-mode builtin \
+  --eval-mode quick
+```
+
+或者用脚本执行：
+
+```bash
+IMAGE_CONFIG=configs/images/h200_offline_qwen25_0p5b_vllm.json \
+JUDGE_MODE=builtin \
+EVAL_MODE=quick \
 bash scripts/run_h200_benchmark.sh
 ```
 
-如果复用 H200 上已经存在的推理服务：
+---
 
-```bash
-IMAGE_CONFIG=configs/images/h200_reuse_existing_service.json bash scripts/run_h200_benchmark.sh
+## 三、当前离线配置说明
+
+离线配置文件：
+
+```text
+configs/images/h200_offline_qwen25_0p5b_vllm.json
 ```
 
-#### 方式 B：使用开发机构建好的 runner 镜像
+核心约束：
 
-导入镜像：
+- `image_uri = brief-image-eval-qwen25-0p5b-vllm:offline`
+- `model_id = Qwen/Qwen2.5-0.5B-Instruct`
+- `offline_image_only = true`
 
-```bash
-gunzip -c brief-image-eval-runner.tar.gz | docker load
-```
+这表示在 H200 上：
 
-运行 runner：
+- **不会执行 `docker pull`**
+- 只会检查本地镜像是否存在
+- 本地没有该镜像就直接报错
 
-```bash
-docker run --rm \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v $(pwd)/outputs:/app/outputs \
-  -v /root/.cache/huggingface:/root/.cache/huggingface \
-  brief-image-eval-runner:latest \
-  python run_eval.py --config configs/images/h200_qwen25_3b_vllm.json --judge-mode builtin --eval-mode quick
-```
+---
 
-如果复用已有服务：
-
-```bash
-docker run --rm \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v $(pwd)/outputs:/app/outputs \
-  brief-image-eval-runner:latest \
-  python run_eval.py --config configs/images/h200_reuse_existing_service.json --judge-mode builtin --eval-mode quick
-```
-
-### 3. 输出结果
+## 四、输出结果
 
 结果默认写入：
 
@@ -135,31 +160,31 @@ docker run --rm \
 outputs/<run_id>/
 ```
 
-重点关注：
+重点关注这些文件：
 
-- `preflight.json`
-- `launch.json`
-- `smoke.json`
-- `benchmark.json`
-- `quality_samples.json`
-- `summary.json`
-- `report.md`
-- `final_brief.md`
+```text
+outputs/<run_id>/preflight.json
+outputs/<run_id>/launch.json
+outputs/<run_id>/smoke.json
+outputs/<run_id>/benchmark.json
+outputs/<run_id>/quality_samples.json
+outputs/<run_id>/summary.json
+outputs/<run_id>/report.md
+outputs/<run_id>/final_brief.md
+```
 
----
-
-## 推荐配置
-
-- `configs/images/h200_qwen25_3b_vllm.json`：H200 自己拉起 vLLM 容器
-- `configs/images/h200_reuse_existing_service.json`：复用 H200 上已有服务
+查看最近一次结果可以手动进入 `outputs/` 目录查看。
 
 ---
 
-## 当前建议
+## 五、推荐首次验收标准
 
-第一次先用：
+第一次只验收这几件事：
 
-- `JUDGE_MODE=builtin`
-- `EVAL_MODE=quick`
+1. H200 上 `docker load` 成功
+2. `preflight.json` 显示通过，并且没有发生 `docker pull`
+3. 容器成功拉起
+4. `smoke + benchmark + quality` 执行完成
+5. `outputs/<run_id>/` 成功生成结果文件
 
-先把主链路跑通，再决定要不要切到外部 Judge API。
+只要这几项都成立，就说明 **方案 B 的离线链路已经跑通**。

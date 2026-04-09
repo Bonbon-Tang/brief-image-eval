@@ -1,0 +1,25 @@
+{
+  "name": "h200-offline-qwen2.5-0.5b-vllm",
+  "image_uri": "brief-image-eval-qwen25-0p5b-vllm:offline",
+  "model_id": "Qwen/Qwen2.5-0.5B-Instruct",
+  "engine": "vllm",
+  "gpu_type": "H200",
+  "launch_mode": "vllm_serve_entrypoint",
+  "dtype": "bfloat16",
+  "tensor_parallel_size": 1,
+  "host_port": 18070,
+  "container_port": 8000,
+  "max_model_len": 4096,
+  "gpu_memory_utilization": 0.8,
+  "model_source": "huggingface",
+  "model_mount_dir": "/models",
+  "trust_level": "offline_local_image",
+  "healthcheck_path": "/v1/models",
+  "chat_path": "/v1/chat/completions",
+  "startup_timeout_sec": 900,
+  "offline_image_only": true,
+  "docker_extra_args": [
+    "-v", "/root/.cache/huggingface:/root/.cache/huggingface",
+    "--ipc=host"
+  ]
+}
