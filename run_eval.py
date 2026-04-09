@@ -44,6 +44,16 @@ def _print_final_brief(out_dir):
     print('===== END FINAL BRIEF =====\n')
 
 
+def _print_run_paths(run_id, out_dir):
+    print('[INFO] run_id={}'.format(run_id))
+    print('[INFO] outputs_dir={}'.format(out_dir))
+    print('[INFO] output_log={}'.format(out_dir / 'output.log'))
+    print('[INFO] metrics_json={}'.format(out_dir / 'metrics.json'))
+    print('[INFO] summary_json={}'.format(out_dir / 'summary.json'))
+    print('[INFO] report_md={}'.format(out_dir / 'report.md'))
+    print('[INFO] final_brief_md={}'.format(out_dir / 'final_brief.md'))
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True, help='镜像配置文件路径')
@@ -82,6 +92,7 @@ def main():
             'timeout_sec': args.judge_timeout_sec,
         }
     })
+    _print_run_paths(run_id, out_dir)
 
     preflight = run_preflight(config)
     write_json(out_dir / 'preflight.json', preflight)

@@ -37,4 +37,12 @@ echo "[INFO] eval_mode=$EVAL_MODE"
 echo "[INFO] judge_mode=$JUDGE_MODE"
 echo "[INFO] keep_container=$KEEP_CONTAINER"
 
-"${cmd[@]}"
+run_name="$(basename "$IMAGE_CONFIG" .json)_${EVAL_MODE}_$(date +%Y%m%d_%H%M%S)"
+log_dir="outputs/_logs/${run_name}"
+mkdir -p "$log_dir"
+log_file="$log_dir/output.log"
+
+echo "[INFO] bootstrap_log_dir=$log_dir"
+echo "[INFO] bootstrap_output_log=$log_file"
+
+"${cmd[@]}" 2>&1 | tee "$log_file"
