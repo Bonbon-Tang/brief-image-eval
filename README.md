@@ -100,6 +100,28 @@ outputs/<run_id>/
 - `report.md`
 - `final_brief.md`
 
+## 推荐入口
+
+### H200 跑通链路
+
+```bash
+bash scripts/run_h200_benchmark.sh
+```
+
+如果 H200 上复用已有服务：
+
+```bash
+IMAGE_CONFIG=configs/images/h200_reuse_existing_service.json bash scripts/run_h200_benchmark.sh
+```
+
+### 构建 runner 镜像
+
+```bash
+docker build -t brief-image-eval-runner:latest .
+```
+
+这个镜像是评测 runner 本身，适合在联网开发机构建后传到 H200，再由 runner 调宿主机 Docker 拉起被测模型镜像。
+
 ## 文档
 
 - `docs/WINDOWS_4060_QUICKSTART.md`

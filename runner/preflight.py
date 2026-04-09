@@ -18,7 +18,8 @@ def _safe_run(cmd, timeout=60):
 
 
 def run_preflight(config):
-    image_uri = config['image_uri']
+    reuse_existing_service = bool(config.get('reuse_existing_service', False))
+    image_uri = config.get('image_uri', '')
     allow_cached_image = bool(config.get('allow_cached_image_on_pull_failure', True))
 
     docker_version = _safe_run(['docker', '--version'])
@@ -28,6 +29,37 @@ def run_preflight(config):
         '--query-gpu=name,driver_version,memory.total',
         '--format=csv,noheader'
     ])
+
+    if reuse_existing_service:
+        passed = (
+            docker_version['returncode'] == 0 and
+            nvidia_smi['returncode'] == 0
+        )
+        issues = []
+        if docker_version['returncode'] != 0:
+            issues.append('docker 检查失败')
+        if nvidia_smi['returncode'] != 0:
+            issues.append('nvidia-smi 检查失败')
+        return {
+            'stage': 'preflight',
+            'timestamp': utc_timestamp(),
+            'passed': passed,
+            'checks': {
+                'docker_version': docker_version,
+                'nvidia_smi': nvidia_smi,
+                'gpu_query': gpu_query,
+                'docker_pull': {'returncode': None, 'stdout': '', 'stderr': 'reuse_existing_service=true, skipped'},
+                'docker_image_inspect': {'returncode': None, 'stdout': '', 'stderr': 'reuse_existing_service=true, skipped'},
+            },
+            'policy': {
+                'reuse_existing_service': True,
+                'allow_cached_image_on_pull_failure': allow_cached_image,
+                'image_ready': True,
+            },
+            'issues': issues,
+            'warnings': ['复用已有服务模式：已跳过镜像拉取与镜像检查'],
+        }
+
     docker_pull = _safe_run(['docker', 'pull', image_uri], timeout=1800)
     docker_inspect = _safe_run(['docker', 'image', 'inspect', image_uri])
 
@@ -67,6 +99,7 @@ def run_preflight(config):
             'docker_image_inspect': docker_inspect,
         },
         'policy': {
+            'reuse_existing_service': False,
             'allow_cached_image_on_pull_failure': allow_cached_image,
             'image_ready': image_ready,
         },

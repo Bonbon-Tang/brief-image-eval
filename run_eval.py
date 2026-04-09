@@ -64,6 +64,7 @@ def main():
 
     quality_prompts_path = _quality_prompts_path(eval_mode)
     judge_prompt_path = _judge_prompt_path(eval_mode)
+    reuse_existing_service = bool(config.get('reuse_existing_service', False))
 
     write_json(out_dir / 'meta.json', {
         'run_id': run_id,
@@ -73,6 +74,7 @@ def main():
         'judge_mode': judge_mode,
         'judge_prompt_path': str(judge_prompt_path),
         'quality_prompts_path': str(quality_prompts_path),
+        'reuse_existing_service': reuse_existing_service,
         'judge_api': {
             'api_base': args.judge_api_base,
             'model': args.judge_model,
@@ -86,13 +88,30 @@ def main():
         print('[FAIL] preflight failed, see {}'.format(out_dir / 'preflight.json'))
         return 1
 
-    launch = launch_service(config)
+    if reuse_existing_service:
+        launch = {
+            'stage': 'launch',
+            'timestamp': preflight.get('timestamp'),
+            'passed': True,
+            'command': None,
+            'container_id': config.get('existing_container_name', ''),
+            'stdout': '',
+            'stderr': 'reuse_existing_service=true, skipped launch',
+            'ready_check': {
+                'ready': True,
+                'url': config['base_url'] + config.get('healthcheck_path', '/v1/models'),
+                'status_code': None,
+                'body': 'reuse_existing_service=true, ready check deferred to smoke/benchmark stage',
+            },
+        }
+    else:
+        launch = launch_service(config)
     write_json(out_dir / 'launch.json', launch)
     if not launch.get('passed'):
         print('[FAIL] launch failed, see {}'.format(out_dir / 'launch.json'))
         return 1
 
-    base_url = 'http://127.0.0.1:{}'.format(config.get('host_port', 18000))
+    base_url = config['base_url'].rstrip('/') if reuse_existing_service else 'http://127.0.0.1:{}'.format(config.get('host_port', 18000))
     smoke = run_smoke(base_url, config['model_id'], str(ROOT / 'configs' / 'prompts' / 'smoke.jsonl'))
     write_json(out_dir / 'smoke.json', smoke)
 
@@ -127,7 +146,7 @@ def main():
     report = build_markdown(summary, preflight, launch, smoke, benchmark, judge_eval)
     write_text(out_dir / 'report.md', report)
 
-    if not args.keep_container:
+    if (not reuse_existing_service) and (not args.keep_container):
         cleanup = cleanup_service(config)
         write_json(out_dir / 'cleanup.json', cleanup)
 
