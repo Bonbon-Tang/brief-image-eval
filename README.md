@@ -2,127 +2,89 @@
 
 一个面向真实 GPU 机器的镜像评测脚手架。
 
-当前采用 **方案 B**：
+当前这版仓库已经按 **H200 直接执行** 的方式固化，目标是先稳定完成：
 
-- **开发机联网**，负责拉基础镜像、准备小模型、导出离线镜像包
-- **H200 不拉镜像**，只接收 `docker save` 导出的 tar.gz，然后 `docker load` + `docker run`
+1. 用 H200 上已有镜像启动服务
+2. 在宿主机运行 benchmark runner
+3. 输出完整评测结果
 
-目标是先用一个小模型把 **离线镜像交付 → H200 执行 benchmark → 输出结果** 这条链路跑通。
-
----
-
-## 一、开发机需要执行的全部命令
-
-### 1. 拉代码
-
-```bash
-git clone https://github.com/Bonbon-Tang/brief-image-eval.git
-cd brief-image-eval
-```
-
-### 2. 给脚本执行权限
-
-```bash
-chmod +x scripts/build_offline_image.sh scripts/run_h200_benchmark.sh
-```
-
-### 3. 构建离线被测镜像（小模型）
-
-默认会使用：
-
-- 基础镜像：`vllm/vllm-openai:latest`
-- 模型：`Qwen/Qwen2.5-0.5B-Instruct`
-- 目标镜像名：`brief-image-eval-qwen25-0p5b-vllm:offline`
-
-执行：
-
-```bash
-bash scripts/build_offline_image.sh
-```
-
-如果想显式写全参数，也可以：
-
-```bash
-IMAGE_NAME=brief-image-eval-qwen25-0p5b-vllm:offline \
-BASE_IMAGE=vllm/vllm-openai:latest \
-MODEL_ID=Qwen/Qwen2.5-0.5B-Instruct \
-HF_CACHE_DIR=$HOME/.cache/huggingface \
-bash scripts/build_offline_image.sh
-```
-
-### 4. 导出离线镜像包
-
-```bash
-docker save brief-image-eval-qwen25-0p5b-vllm:offline | gzip > brief-image-eval-qwen25-0p5b-vllm-offline.tar.gz
-```
-
-### 5. 传代码目录到 H200
-
-```bash
-scp -r brief-image-eval <user>@<h200-host>:/path/to/
-```
-
-### 6. 传离线镜像包到 H200
-
-```bash
-scp brief-image-eval-qwen25-0p5b-vllm-offline.tar.gz <user>@<h200-host>:/path/to/
-```
+> 重要：`run_eval.py` 要在 **H200 宿主机** 执行，不要在被测 vLLM 容器里执行。
 
 ---
 
-## 二、H200 需要执行的全部命令
+## 一、当前默认测试组合
 
-### 1. 基础检查
+- 被测镜像：`registry.h.pjlab.org.cn/ailab-sys/vllm:v0.17.1`
+- 宿主机挂载目录：`/mnt/nvme1n1/tangyufeng`
+- 模型目录：`/mnt/nvme1n1/tangyufeng/models/Qwen2.5-0.5B-Instruct`
+- 服务端口：`18080`
+- runner 配置：`configs/images/h200_reuse_existing_service.json`
+- 评测模式：`builtin + quick`
+
+---
+
+## 二、H200 直接执行命令
+
+### 1. 启动被测服务
 
 ```bash
-nvidia-smi
-docker --version
-python3 --version
+docker rm -f brief-image-eval-vllm 2>/dev/null || true
+
+docker run --rm -d \
+  --name brief-image-eval-vllm \
+  --gpus all \
+  --ipc=host \
+  --mount type=bind,source=/mnt/nvme1n1/tangyufeng,target=/mnt/nvme1n1/tangyufeng \
+  -p 18080:8000 \
+  registry.h.pjlab.org.cn/ailab-sys/vllm:v0.17.1 \
+  serve /mnt/nvme1n1/tangyufeng/models/Qwen2.5-0.5B-Instruct \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --dtype bfloat16 \
+  --tensor-parallel-size 1 \
+  --max-model-len 4096 \
+  --gpu-memory-utilization 0.8
 ```
 
-### 2. 进入项目目录
+如果你们要固定单卡，比如 GPU 7，把 `--gpus all` 改成：
 
 ```bash
-cd /path/to/brief-image-eval
+--gpus '"device=7"'
 ```
 
-### 3. 安装 Python 依赖
+### 2. 检查服务是否就绪
+
+```bash
+curl http://127.0.0.1:18080/v1/models
+```
+
+只要这条返回 JSON，就说明服务已经起来了。
+
+### 3. 进入项目目录
+
+```bash
+cd /mnt/nvme1n1/tangyufeng/brief-image-eval
+```
+
+### 4. 安装 Python 依赖
 
 ```bash
 pip3 install -r requirements.txt
 ```
 
-### 4. 导入开发机传来的离线镜像包
-
-```bash
-gunzip -c /path/to/brief-image-eval-qwen25-0p5b-vllm-offline.tar.gz | docker load
-```
-
-### 5. 确认本地镜像存在
-
-```bash
-docker images | grep brief-image-eval-qwen25-0p5b-vllm
-```
-
-### 6. 执行 benchmark
-
-项目已经提供了离线配置：
-
-- `configs/images/h200_offline_qwen25_0p5b_vllm.json`
-
-直接执行：
+### 5. 执行 benchmark
 
 ```bash
 python3 run_eval.py \
-  --config configs/images/h200_offline_qwen25_0p5b_vllm.json \
+  --config configs/images/h200_reuse_existing_service.json \
   --judge-mode builtin \
   --eval-mode quick
 ```
 
-或者用脚本执行：
+或者用脚本：
 
 ```bash
-IMAGE_CONFIG=configs/images/h200_offline_qwen25_0p5b_vllm.json \
+IMAGE_CONFIG=configs/images/h200_reuse_existing_service.json \
 JUDGE_MODE=builtin \
 EVAL_MODE=quick \
 bash scripts/run_h200_benchmark.sh
@@ -130,37 +92,15 @@ bash scripts/run_h200_benchmark.sh
 
 ---
 
-## 三、当前离线配置说明
+## 三、查看结果
 
-离线配置文件：
-
-```text
-configs/images/h200_offline_qwen25_0p5b_vllm.json
-```
-
-核心约束：
-
-- `image_uri = brief-image-eval-qwen25-0p5b-vllm:offline`
-- `model_id = Qwen/Qwen2.5-0.5B-Instruct`
-- `offline_image_only = true`
-
-这表示在 H200 上：
-
-- **不会执行 `docker pull`**
-- 只会检查本地镜像是否存在
-- 本地没有该镜像就直接报错
-
----
-
-## 四、输出结果
-
-结果默认写入：
+结果目录默认在：
 
 ```text
 outputs/<run_id>/
 ```
 
-重点关注这些文件：
+重点文件：
 
 ```text
 outputs/<run_id>/preflight.json
@@ -173,18 +113,30 @@ outputs/<run_id>/report.md
 outputs/<run_id>/final_brief.md
 ```
 
-查看最近一次结果可以手动进入 `outputs/` 目录查看。
+查看最近一次结果：
+
+```bash
+ls -td outputs/* | head
+```
+
+查看摘要：
+
+```bash
+cat outputs/<run_id>/final_brief.md
+```
 
 ---
 
-## 五、推荐首次验收标准
+## 四、当前定位
 
-第一次只验收这几件事：
+当前目标是 **方向 A：先确认链路稳定可复现**，不是先追求高分。
 
-1. H200 上 `docker load` 成功
-2. `preflight.json` 显示通过，并且没有发生 `docker pull`
-3. 容器成功拉起
-4. `smoke + benchmark + quality` 执行完成
-5. `outputs/<run_id>/` 成功生成结果文件
+也就是说，只要你能稳定完成：
 
-只要这几项都成立，就说明 **方案 B 的离线链路已经跑通**。
+1. 服务启动
+2. runner 跑完
+3. `outputs/<run_id>/` 生成结果
+
+就说明 H200 的执行链已经打通。
+
+后面再根据结果决定是否换更大的模型、调 prompt、调 benchmark 配置。
