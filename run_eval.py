@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
 from runner.benchmark import run_benchmark, run_quality_samples, run_smoke
 from runner.judge_api import run_judge_eval
 from runner.launch import cleanup_service, launch_service
+from runner.metrics import build_metrics
 from runner.preflight import run_preflight
 from runner.report import build_markdown, build_summary
 from runner.utils import ensure_dir, load_json, make_run_id, write_json, write_text
@@ -140,10 +141,13 @@ def main():
         judge_mode=judge_mode,
     )
 
-    summary = build_summary(config, run_id, preflight, launch, smoke, benchmark, judge_eval)
+    metrics = build_metrics(config, smoke, benchmark, quality_samples, judge_eval)
+    write_json(out_dir / 'metrics.json', metrics)
+
+    summary = build_summary(config, run_id, preflight, launch, smoke, benchmark, judge_eval, metrics)
     write_json(out_dir / 'summary.json', summary)
 
-    report = build_markdown(summary, preflight, launch, smoke, benchmark, judge_eval)
+    report = build_markdown(summary, preflight, launch, smoke, benchmark, judge_eval, metrics)
     write_text(out_dir / 'report.md', report)
 
     if (not reuse_existing_service) and (not args.keep_container):

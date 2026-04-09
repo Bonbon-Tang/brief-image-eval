@@ -1,4 +1,4 @@
-def build_summary(config, run_id, preflight, launch, smoke, benchmark, judge_eval):
+def build_summary(config, run_id, preflight, launch, smoke, benchmark, judge_eval, metrics):
     overall = all([
         preflight.get('passed', False),
         launch.get('passed', False),
@@ -17,10 +17,11 @@ def build_summary(config, run_id, preflight, launch, smoke, benchmark, judge_eva
         'benchmark_passed': benchmark.get('passed', False),
         'judge_eval_status': judge_eval.get('overall_status', 'FAIL'),
         'overall_status': 'PASS' if overall else 'FAIL',
+        'metrics': metrics,
     }
 
 
-def build_markdown(summary, preflight, launch, smoke, benchmark, judge_eval):
+def build_markdown(summary, preflight, launch, smoke, benchmark, judge_eval, metrics):
     lines = []
     lines.append('# H200 镜像评测报告')
     lines.append('')
@@ -45,6 +46,15 @@ def build_markdown(summary, preflight, launch, smoke, benchmark, judge_eval):
         lines.append('- {}: avg={}ms p95={}ms success={}/{}'.format(
             item.get('name'), item.get('avg_latency_ms'), item.get('p95_latency_ms'), item.get('success_count'), total
         ))
+    lines.append('')
+    lines.append('## 指标采集汇总')
+    lines.append('- 吞吐峰值 (RPS): {}'.format(metrics.get('throughput', {}).get('peak_rps')))
+    lines.append('- 平均延迟 (ms): {}'.format(metrics.get('latency', {}).get('avg_latency_ms')))
+    lines.append('- P95 延迟 (ms): {}'.format(metrics.get('latency', {}).get('p95_latency_ms')))
+    lines.append('- 请求成功率: {}'.format(metrics.get('availability', {}).get('success_rate')))
+    lines.append('- 准确率代理 (PASS ratio): {}'.format(metrics.get('accuracy_proxy', {}).get('pass_ratio')))
+    lines.append('- 功能完备性代理 (smoke 成功率): {}'.format(metrics.get('functionality_completeness_proxy', {}).get('smoke_success_rate')))
+    lines.append('- 能效比采集状态: {}'.format(metrics.get('energy_efficiency', {}).get('status')))
     lines.append('')
     lines.append('## API 评测结果')
     lines.append('- 结果: {}'.format(judge_eval.get('overall_status', 'FAIL')))

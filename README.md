@@ -102,10 +102,20 @@ outputs/<run_id>/launch.json
 outputs/<run_id>/smoke.json
 outputs/<run_id>/benchmark.json
 outputs/<run_id>/quality_samples.json
+outputs/<run_id>/metrics.json
 outputs/<run_id>/summary.json
 outputs/<run_id>/report.md
 outputs/<run_id>/final_brief.md
 ```
+
+其中 `metrics.json` 会集中给出当前版本的指标采集结果，包括：
+
+- 吞吐峰值（RPS）
+- 平均延迟 / P95 延迟
+- 请求成功率
+- 准确率代理（基于 builtin/api judge）
+- 功能完备性代理（基于 smoke 成功率）
+- 能效比采集状态（当前先标记为未接入）
 
 查看最近一次输出：
 
